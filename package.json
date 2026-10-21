@@ -13,7 +13,10 @@
     "test": "turbo test",
     "backend:seed": "turbo seed --filter=@dtc/backend",
     "backend:dev": "turbo dev --filter=@dtc/backend",
-    "storefront:dev": "turbo dev --filter=@dtc/storefront"
+    "storefront:dev": "turbo dev --filter=@dtc/storefront",
+    "api:openapi": "node scripts/generate-openapi.cjs",
+    "api:openapi:store": "node scripts/generate-openapi.cjs --filter store --out docs/openapi-store.json",
+    "api:openapi:admin": "node scripts/generate-openapi.cjs --filter admin --out docs/openapi-admin.json"
   },
   "pnpm": {
     "overrides": {
@@ -24,13 +27,15 @@
   },
   "devDependencies": {
     "@medusajs/eslint-plugin": "2.21.2",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "ajv": "^8.13.0",
     "eslint": "^9.39.4",
     "jiti": "^2.7.0",
     "prettier": "^3.2.5",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "turbo": "^2.0.14",
-    "ajv": "^8.13.0"
+    "turbo": "^2.0.14"
   },
   "workspaces": [
     "apps/**",

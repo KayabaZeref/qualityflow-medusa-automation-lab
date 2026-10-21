@@ -7,11 +7,12 @@ const DeleteButton = ({
   id,
   children,
   className,
+  ...props
 }: {
   id: string
   children?: React.ReactNode
   className?: string
-}) => {
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
   const [isDeleting, setIsDeleting] = useState(false)
 
   const handleDelete = async (id: string) => {
@@ -31,6 +32,7 @@ const DeleteButton = ({
       <button
         className="flex gap-x-1 text-ui-fg-subtle hover:text-ui-fg-base cursor-pointer"
         onClick={() => handleDelete(id)}
+        {...props}
       >
         {isDeleting ? <Spinner className="animate-spin" /> : <Trash />}
         <span>{children}</span>

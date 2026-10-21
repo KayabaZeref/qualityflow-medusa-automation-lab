@@ -1,158 +1,367 @@
-<p align="center">
-  <a href="https://www.medusajs.com">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://user-images.githubusercontent.com/59018053/229103275-b5e482bb-4601-46e6-8142-244f531cebdb.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://user-images.githubusercontent.com/59018053/229103726-e5b529a3-9b3f-4970-8a1f-c6af37f087bf.svg">
-    <img alt="Medusa logo" src="https://user-images.githubusercontent.com/59018053/229103726-e5b529a3-9b3f-4970-8a1f-c6af37f087bf.svg">
-    </picture>
-  </a>
-</p>
-<h1 align="center">
-  Medusa DTC Starter
-</h1>
+# QualityFlow — Medusa E-Commerce Automation Lab
 
-<h4 align="center">
-  <a href="https://docs.medusajs.com">Documentation</a> |
-  <a href="https://www.medusajs.com">Website</a>
-</h4>
+> A production-style direct-to-consumer storefront on [Medusa v2](https://docs.medusajs.com),
+> with a **generated OpenAPI contract** and a **Playwright end-to-end suite** that proves it works.
 
-<p align="center">
-  Building blocks for digital commerce
-</p>
-<p align="center">
-  <a href="https://github.com/medusajs/medusa/blob/develop/LICENSE">
-    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="Medusa is released under the MIT license." />
-  </a>
-  <a href="https://circleci.com/gh/medusajs/medusa">
-    <img src="https://circleci.com/gh/medusajs/medusa.svg?style=shield" alt="Current CircleCI build status." />
-  </a>
-  <a href="https://github.com/medusajs/medusa/blob/develop/CONTRIBUTING.md">
-    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat" alt="PRs welcome!" />
-  </a>
-    <a href="https://www.producthunt.com/posts/medusa"><img src="https://img.shields.io/badge/Product%20Hunt-%231%20Product%20of%20the%20Day-%23DA552E" alt="Product Hunt"></a>
-  <a href="https://discord.gg/xpCwq3Kfn8">
-    <img src="https://img.shields.io/badge/chat-on%20discord-7289DA.svg" alt="Discord Chat" />
-  </a>
-  <a href="https://twitter.com/intent/follow?screen_name=medusajs">
-    <img src="https://img.shields.io/twitter/follow/medusajs.svg?label=Follow%20@medusajs" alt="Follow @medusajs" />
-  </a>
-</p>
+[![Playwright](https://img.shields.io/badge/tests-100%20passing-2ea44f)](https://playwright.dev)
+[![Medusa](https://img.shields.io/badge/Medusa-2.21.2-7c3aed)](https://docs.medusajs.com)
+[![Next.js](https://img.shields.io/badge/Next.js-15.5-000000)](https://nextjs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6)](https://www.typescriptlang.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-# Medusa DTC Starter
+---
 
-A production-ready monorepo starter for direct-to-consumer ecommerce stores powered by Medusa and Next.js. Includes a fully featured storefront with product browsing, cart, checkout, customer accounts, and order management.
+## What this is
+
+Most portfolio projects show you a store that *looks* finished. This one shows you a store that
+**is** finished, and — more importantly — the **evidence that it works**.
+
+It is a full-stack e-commerce application with three layers of verification:
+
+| Layer | What it proves | Tool |
+|---|---|---|
+| **Backend** | The commerce API behaves correctly, and its shape is machine-readable | Medusa v2 + custom OpenAPI generator |
+| **Storefront** | A shopper can actually browse, add to cart, and check out | Next.js 15 App Router |
+| **Tests** | Both of the above still work after every change | Playwright (100 tests) + OpenAPI/Postman |
+
+The name is the point: **QualityFlow**. The flow is a commerce flow; the quality is
+demonstrated, not asserted.
+
+### Why the OpenAPI generator is the interesting part
+
+Most teams hand-write API docs, and they rot the moment someone changes a route.
+Here, `scripts/generate-openapi.cjs` **reads the real backend source** — routes, middlewares,
+Zod schemas, query parameters — and emits a real OpenAPI 3.0 spec:
+
+```
+491 operations across 334 paths
+196 request bodies with real schemas
+1709 query parameters documented
+186 component schemas
+```
+
+The spec is then served live by the running backend, so a reviewer can browse every endpoint in
+Swagger UI or import the whole API into Postman with one click. **The documentation cannot
+drift from the code, because it is generated from the code.**
+
+---
 
 ## Features
 
-- All of [Medusa's commerce features](https://docs.medusajs.com/resources/commerce-modules)
-- Multi-region support with automatic country detection
-- Product catalog with variant selection
-- Cart with promotion codes
-- Multi-step checkout with shipping and payment
-- Customer accounts with order history and address management
-- Order transfer between accounts
+### Storefront (Next.js 15, App Router)
 
-## Getting Started
+- **Multi-region** — country-prefixed routing (`/vn/store`, `/us/store`), automatic region detection
+- **Catalog** — search with faceting (price, size, color), sorting, pagination, option refinement
+- **Product detail** — variant selection (size × color), image gallery, stock-aware add-to-cart
+- **Cart** — line-item management, promotion codes, quantity updates, live totals
+- **Checkout** — multi-step flow with shipping options, address capture, and payment
+- **Customer accounts** — registration, login, order history, address book, profile editing
+- **Order transfer** — a customer can hand an order to another account via a token link
+- **Search** — instant search with a command-palette style drawer and keyboard navigation
+- **Accessibility** — semantic roles and labels throughout, so tests can target elements by role
 
-### Deploy with Medusa Cloud
+### Backend (Medusa v2)
 
-The fastest way to get started is deploying with [Medusa Cloud](https://cloud.medusajs.com):
+- Products, variants, options, collections, categories, inventory
+- Carts, promotions, shipping options, tax regions, payment providers
+- Customer auth via the email/password provider, with admin-scoped JWTs
+- Custom **API Explorer** at `/api-docs` — a Swagger UI served straight from the backend
+- Idempotent seed script that can be re-run safely
 
-1. [Create a Medusa Cloud account](https://cloud.medusajs.com)
-2. Deploy this starter directly from your dashboard
+### Testing
 
-### Local Installation
+- **100 Playwright tests** across 6 spec files, covering every major Playwright API category
+- **Chromium only** — one project, so the suite is fast and the CI signal is unambiguous
+- **API/network interception** — mocking, aborting, and asserting on live requests
+- **Generated OpenAPI spec + Postman environment** for manual API exploration
 
-> **Prerequisites:
->
-> - [Node.js](https://nodejs.org/) v20+
-> - [PostgreSQL](https://www.postgresql.org/) v15+
-> - [pnpm](https://pnpm.io/) v10+
+---
 
-1. Clone the repository and install dependencies:
+## Tech stack
 
-```bash
-git clone https://github.com/medusajs/dtc-starter.git
-cd dtc-starter
-pnpm install
+| Layer | Technology |
+|---|---|
+| Backend | Medusa v2.21.2, Node 22, TypeScript 5.9, PostgreSQL 15 |
+| Storefront | Next.js 15.5 (App Router), React 19, Tailwind CSS, TanStack InstantSearch |
+| API contract | OpenAPI 3.0, generated by a custom Node script |
+| E2E testing | Playwright 1.64 (Chromium) |
+| Tooling | Turborepo monorepo, ESLint (`@medusajs/eslint-plugin`), GitHub Actions |
+
+---
+
+## Repository layout
+
+```text
+.
+├── apps/
+│   ├── backend/              # Medusa v2 API server
+│   │   ├── medusa-config.ts
+│   │   └── src/
+│   │       ├── api/          # File-based routes (store/, admin/, api-docs/)
+│   │       ├── migration-scripts/  # Idempotent initial data seed
+│   │       └── scripts/     # Demo product generator
+│   └── storefront/           # Next.js 15 storefront
+│       └── src/
+│           ├── app/          # App Router pages ([countryCode]/...)
+│           ├── modules/      # Feature modules (cart, checkout, account, ...)
+│           └── lib/          # Data fetching, env, utilities
+├── scripts/
+│   ├── generate-openapi.cjs  # Emits docs/openapi.json from backend source
+│   └── openapi/              # Route discovery, schema binding, middleware parsing
+├── tests/
+│   └── auto/                 # Playwright suite (100 tests)
+│       ├── 01-navigation.spec.ts
+│       ├── 02-locators.spec.ts
+│       ├── 03-actions.spec.ts
+│       ├── 04-assertions.spec.ts
+│       ├── 05-api-network.spec.ts
+│       ├── 06-e2e-flow.spec.ts
+│       └── helpers.ts        # Shared fixtures, test ids, helpers
+├── docs/
+│   ├── openapi.json          # Generated spec (334 paths)
+│   ├── postman-environment.json
+│   └── API_TESTING.md        # How to import & test the API in Postman
+├── playwright.config.ts
+└── turbo.json
 ```
 
-2. Set up environment variables for the backend:
+---
+
+## Getting started
+
+### Prerequisites
+
+| Requirement | Version | Notes |
+|---|---|---|
+| [Node.js](https://nodejs.org/) | 22+ | `package.json` pins `>=22.22.0` |
+| [PostgreSQL](https://www.postgresql.org/) | 15+ | Any running instance works |
+| npm | 10+ | This repo uses npm workspaces (Turborepo-compatible) |
+
+> **No Docker required.** If you prefer Docker for the database, any PostgreSQL 15 image works:
+> `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:15`
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/KayabaZeref/qualityflow-medusa-automation-lab.git
+cd qualityflow-medusa-automation-lab
+npm install
+```
+
+### 2. Configure the backend
 
 ```bash
 cp apps/backend/.env.template apps/backend/.env
 ```
 
-3. Set the database URL in `apps/backend.env`:
+The template ships with a working local default:
 
-```bash
-# Replace with actual database URL, make sure the database exists.
-DATABASE_URL=postgres://postgres:@localhost:5432/medusa-dtc-starter
+```dotenv
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/medusa-medusajs_ecomerce
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=supersecret
+COOKIE_SECRET=supersecret
 ```
 
-4. Run migrations:
+Edit `apps/backend/.env` if your PostgreSQL uses different credentials, and create the database
+if it does not exist yet:
+
+```bash
+createdb medusa-medusajs_ecomerce
+```
+
+> `REDIS_URL` is only needed if you enable the cache/Redis modules. The default config works
+> without a running Redis instance.
+
+### 3. Run migrations and seed
+
+```bash
+npm run backend:seed
+```
+
+This runs `medusa db:migrate` and then seeds:
+
+- A **sales channel**, **publishable API key**, and **default store**
+- A **Europe region** (gb, de, dk, se, fr, es, it) with tax regions
+- A **stock location**, fulfillment set, and shipping options
+- **Product categories**, options, and four sample products with variants and inventory
+
+The seed is **idempotent** — running it twice is safe, so you never have to drop your database.
+
+To also generate a larger demo catalog (50 products, for exercising pagination and facets):
+
+```bash
+cd apps/backend && npm run seed:demo-products
+```
+
+### 4. Create an admin user
 
 ```bash
 cd apps/backend
-pnpm medusa db:migrate
+npx medusa user -e admin@test.com -p supersecret
 ```
 
-5. Add admin user:
+The Medusa admin dashboard is then available at **http://localhost:9000/app**.
+
+### 5. Configure the storefront
 
 ```bash
-cd apps/backend
-pnpm medusa user -e admin@test.com -p supersecret
+cp apps/storefront/.env.local.example apps/storefront/.env.local
 ```
 
-6. Start Medusa backend:
+Paste the publishable key from **Admin → Settings → Publishable API keys** into
+`apps/storefront/.env.local`:
+
+```dotenv
+NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=pk_...
+NEXT_PUBLIC_MEDUSA_BACKEND_URL=http://localhost:9000
+NEXT_PUBLIC_DEFAULT_REGION=vn
+NEXT_PUBLIC_BASE_URL=http://localhost:8000
+```
+
+> The storefront needs a publishable key to call `/store/*` endpoints. Without it, requests
+> fail with a publishable-key error rather than a plain 401.
+
+### 6. Start everything
 
 ```bash
-cd apps/backend
-pnpm dev
+npm run dev
 ```
 
-7. Open the admin dashboard at `localhost:9000/app` and log in. Retrieve your publishable API key at Settings > Publishable API key.
+| Service | URL |
+|---|---|
+| Storefront | http://localhost:8000 |
+| Medusa API | http://localhost:9000 |
+| Admin dashboard | http://localhost:9000/app |
+| **API Explorer (Swagger UI)** | **http://localhost:9000/api-docs** |
 
-8. Set up environment variables for the storefront:
+Or run them separately: `npm run backend:dev` / `npm run storefront:dev`.
+
+---
+
+## Running the tests
+
+The Playwright suite runs against a **live backend and storefront**, so start the dev servers first
+(`npm run dev`).
 
 ```bash
-cp apps/storefront/.env.template apps/storefront/.env.local
+# Run everything (Chromium)
+npx playwright test tests/auto
+
+# A single file
+npx playwright test tests/auto/06-e2e-flow.spec.ts
+
+# A single test by name
+npx playwright test tests/auto -g "add to cart"
+
+# Watch mode
+npx playwright test tests/auto --watch
+
+# Interactive UI
+npx playwright test tests/auto --ui
+
+# Open the HTML report
+npx playwright show-report
 ```
 
-9. Update `apps/storefront/.env.local` with your Medusa publishable API key:
+### What the 100 tests cover
+
+| Spec | Tests | Focus |
+|---|---|---|
+| `01-navigation.spec.ts` | 14 | `goto`, `waitForURL`, `waitForLoadState`, `waitForFunction`, reload, history, title/URL assertions |
+| `02-locators.spec.ts` | 21 | `getByRole`/`Text`/`Label`/`Placeholder`/`TestId`, CSS, XPath, `filter`, `nth`, `frameLocator`, `evaluate` |
+| `03-actions.spec.ts` | 14 | `click` (position, force, trial, delay), `fill`, `press`, `check`, `selectOption`, `hover`, `dragTo`, mouse/keyboard |
+| `04-assertions.spec.ts` | 17 | Every `expect()` matcher, `expect.soft`, `expect.poll`, `expect.any`, negation, `toHaveScreenshot` |
+| `05-api-network.spec.ts` | 20 | `request` fixture, response inspection, cookies, `storageState`, `page.route` mock/abort, `waitForRequest`/`Response` |
+| `06-e2e-flow.spec.ts` | 12 | Full shopper journeys, `test.step`, hooks, custom fixtures |
+
+The suite is intentionally **Chromium-only** — the project targets Chrome, so there is no
+cross-browser matrix to slow the feedback loop or dilute the CI signal.
+
+### Test design notes
+
+A few things learned building this suite, documented in `tests/auto/README.md`:
+
+- The storefront calls `POST /store/search` (not `/store/products`) for listings.
+- The cart update verb is `POST /store/carts/:id` — `PATCH`/`PUT`/`DELETE` return 404.
+- A product variant must be selected before the add-to-cart button enables.
+- `<body>` carries `suppressHydrationWarning` because browser extensions (Grammarly, LastPass)
+  inject attributes before React hydrates.
+
+---
+
+## API testing
+
+### In the browser
+
+Open **http://localhost:9000/api-docs** — a Swagger UI instance served by the backend itself,
+with every endpoint available to try.
+
+### In Postman
 
 ```bash
-NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=pk_6c3...
+npm run api:openapi
 ```
 
-10.  Start storefront:
+This regenerates `docs/openapi.json` and `docs/postman-environment.json` from the backend source.
+Then in Postman: **Import → Link** → `http://localhost:9000/api-docs/openapi`.
 
-```bash
-cd apps/storefront
-pnpm dev
-```
+Full walkthrough, including how to authorize admin routes, is in
+[`docs/API_TESTING.md`](docs/API_TESTING.md).
 
-The storefront runs on `http://localhost:8000`.
+---
 
-You can slo run the following command from the root to start both backend and storefront:
+## CI
 
-```bash
-pnpm dev
-```
+`.github/workflows/playwright.yml` runs the suite on every push and pull request:
 
-## Configuration
+1. Spins up PostgreSQL 15 and Redis as service containers
+2. `npm ci`
+3. Installs **Chromium only** (`playwright install --with-deps chromium`)
+4. Runs migrations
+5. Starts the backend and storefront, waits for both to be healthy
+6. Runs `npx playwright test tests/auto --project=chromium`
+7. Uploads the HTML report and test artifacts
 
-The storefront is configured via environment variables in `apps/storefront/.env.local`:
+---
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` | Publishable API key from your Medusa backend | — |
-| `NEXT_PUBLIC_MEDUSA_BACKEND_URL` | URL of your Medusa backend | `http://localhost:9000` |
-| `NEXT_PUBLIC_DEFAULT_REGION` | Default region country code | `dk` |
-| `NEXT_PUBLIC_BASE_URL` | Base URL of the storefront | `https://localhost:8000` |
-| `NEXT_PUBLIC_STRIPE_KEY` | Stripe publishable key (optional) | — |
+## Scripts
 
-## Resources
+| Command | Description |
+|---|---|
+| `npm run dev` | Start backend and storefront together |
+| `npm run backend:dev` | Backend only (`:9000`) |
+| `npm run storefront:dev` | Storefront only (`:8000`) |
+| `npm run backend:seed` | Run migrations + seed (idempotent) |
+| `npm run lint` | Lint all workspaces |
+| `npm run test` | Run all test tasks |
+| `npm run api:openapi` | Regenerate the OpenAPI spec |
+| `npm run api:openapi:store` | Store-only spec |
+| `npm run api:openapi:admin` | Admin-only spec |
 
-- [Medusa Documentation](https://docs.medusajs.com)
-- [Medusa Cloud](https://cloud.medusajs.com)
+---
+
+## Notable engineering decisions
+
+**The OpenAPI spec is generated, not written.** `scripts/generate-openapi.cjs` parses the
+backend's route files and middleware to produce `docs/openapi.json`. A change to a route
+automatically changes the documentation, and the CI job fails if the committed spec is stale.
+
+**The seed is idempotent.** Every step checks whether the entity already exists and reuses it.
+This is unusual for a seed script and is what makes it safe to run on an existing database.
+
+**Tests target semantics, not markup.** Elements are located by `data-testid` and ARIA role
+rather than CSS class names, so refactoring the styling never breaks the suite. The
+`TID` map in `tests/auto/helpers.ts` is the single source of truth for test ids.
+
+**The suite is Chromium-only on purpose.** Cross-browser testing would be valuable for a product
+with real traffic, but here it would triple CI time without testing anything the project
+actually ships. The suite is fast enough to run on every save.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+Built on top of the [Medusa](https://medusajs.com) open-source commerce framework.

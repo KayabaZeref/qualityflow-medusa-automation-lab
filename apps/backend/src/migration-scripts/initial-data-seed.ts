@@ -1,6 +1,8 @@
 import { MedusaContainer } from "@medusajs/framework";
+import { FulfillmentWorkflow } from "@medusajs/framework/types";
 import {
   ContainerRegistrationKeys,
+  MedusaError,
   ModuleRegistrationName,
   Modules,
   ProductStatus,
@@ -37,33 +39,109 @@ export default async function initial_data_seed({
 
   const countries = ["gb", "de", "dk", "se", "fr", "es", "it"];
 
+/**
+ * The seed reuses whatever already exists. Entities read back through
+ * `query.graph` come back as full models, while the create workflows return
+ * DTOs, so the reused values are typed to just the fields this script reads.
+ */
+type SalesChannelRef = { id: string; name: string };
+type ApiKeyRef = {
+  id: string;
+  title: string;
+  token: string;
+  revoked_at: Date | string | null;
+};
+type RegionRef = {
+  id: string;
+  name: string;
+  currency_code: string;
+  countries?: ({ iso_2?: string } | null)[] | null;
+};
+type StockLocationRef = { id: string; name: string };
+type FulfillmentSetRef = {
+  id: string;
+  name: string;
+  service_zones: { id: string }[];
+};
+
+/** Fails loudly instead of letting a missing entity fail further down. */
+function requireEntity<T>(value: T | undefined, message: string): T {
+  if (!value) {
+    throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, message);
+  }
+
+  return value;
+}
+
   logger.info("Seeding store data...");
-  const {
-    result: [defaultSalesChannel],
-  } = await createSalesChannelsWorkflow(container).run({
-    input: {
-      salesChannelsData: [
-        {
-          name: "Default Sales Channel",
-          description: "Created by Medusa",
-        },
-      ],
-    },
+  // Sales channels and publishable keys are unique by name/title, so reuse
+  // whatever already exists rather than failing on a re-run.
+  const { data: existingSalesChannels } = await query.graph({
+    entity: "sales_channel",
+    fields: ["id", "name"],
   });
 
-  const {
-    result: [publishableApiKey],
-  } = await createApiKeysWorkflow(container).run({
-    input: {
-      api_keys: [
-        {
-          title: "Default Publishable API Key",
-          type: "publishable",
-          created_by: "",
-        },
-      ],
-    },
+  let defaultSalesChannel: SalesChannelRef | undefined =
+    existingSalesChannels.find(
+      (channel) => channel.name === "Default Sales Channel"
+    );
+
+  if (!defaultSalesChannel) {
+    const {
+      result: [createdSalesChannel],
+    } = await createSalesChannelsWorkflow(container).run({
+      input: {
+        salesChannelsData: [
+          {
+            name: "Default Sales Channel",
+            description: "Created by Medusa",
+          },
+        ],
+      },
+    });
+    defaultSalesChannel = createdSalesChannel;
+  } else {
+    logger.info('Sales channel "Default Sales Channel" already exists.');
+  }
+
+  const { data: existingApiKeys } = await query.graph({
+    entity: "api_key",
+    fields: ["id", "title", "token", "revoked_at", "type"],
   });
+
+  let publishableApiKey: ApiKeyRef | undefined = existingApiKeys.find(
+    (key) => key.title === "Default Publishable API Key" && !key.revoked_at
+  );
+
+  if (!publishableApiKey) {
+    const {
+      result: [createdApiKey],
+    } = await createApiKeysWorkflow(container).run({
+      input: {
+        api_keys: [
+          {
+            title: "Default Publishable API Key",
+            type: "publishable",
+            created_by: "",
+          },
+        ],
+      },
+    });
+    publishableApiKey = createdApiKey;
+  } else {
+    logger.info(
+      'Publishable API key "Default Publishable API Key" already exists.'
+    );
+  }
+
+  requireEntity(
+    defaultSalesChannel,
+    'Sales channel "Default Sales Channel" is missing after seeding.'
+  );
+  requireEntity(
+    publishableApiKey,
+    'Publishable API key "Default Publishable API Key" is missing after seeding.'
+  );
 
   await linkSalesChannelsToApiKeyWorkflow(container).run({
     input: {
@@ -72,72 +150,139 @@ export default async function initial_data_seed({
     },
   });
 
-  const {
-    result: [store],
-  } = await createStoresWorkflow(container).run({
-    input: {
-      stores: [
-        {
-          name: "Default Store",
-          supported_currencies: [
-            {
-              currency_code: "eur",
-              is_default: true,
-            },
-            {
-              currency_code: "usd",
-              is_default: false,
-            },
-          ],
-          default_sales_channel_id: defaultSalesChannel.id,
-        },
-      ],
-    },
+  const { data: existingStores } = await query.graph({
+    entity: "store",
+    fields: ["id", "name"],
   });
 
+  if (!existingStores.find((existing) => existing.name === "Default Store")) {
+    await createStoresWorkflow(container).run({
+      input: {
+        stores: [
+          {
+            name: "Default Store",
+            supported_currencies: [
+              {
+                currency_code: "eur",
+                is_default: true,
+              },
+              {
+                currency_code: "usd",
+                is_default: false,
+              },
+            ],
+            default_sales_channel_id: defaultSalesChannel.id,
+          },
+        ],
+      },
+    });
+  } else {
+    logger.info('Store "Default Store" already exists.');
+  }
+
   logger.info("Seeding region data...");
-  const { result: regionResult } = await createRegionsWorkflow(container).run({
-    input: {
-      regions: [
-        {
-          name: "Europe",
-          currency_code: "eur",
-          countries,
-          payment_providers: ["pp_system_default"],
-        },
-      ],
-    },
+  // Region creation is not idempotent - Medusa rejects a country that is
+  // already assigned to another region. Reuse the existing region when one
+  // already covers these countries so the seed can be re-run safely.
+  const { data: existingRegions } = await query.graph({
+    entity: "region",
+    fields: ["id", "name", "currency_code", "countries.iso_2"],
   });
-  const region = regionResult[0];
+
+  const regionCountries = (existing: RegionRef): string[] =>
+    (existing.countries ?? [])
+      .map((country) => country?.iso_2)
+      .filter((code): code is string => !!code);
+
+  let region: RegionRef | undefined = existingRegions.find((existing) =>
+    countries.every((code) => regionCountries(existing as RegionRef).includes(code))
+  );
+
+  if (region) {
+    logger.info(`Region "${region.name}" already exists, skipping creation.`);
+  } else {
+    const { result: regionResult } = await createRegionsWorkflow(container).run({
+      input: {
+        regions: [
+          {
+            name: "Europe",
+            currency_code: "eur",
+            countries,
+            payment_providers: ["pp_system_default"],
+          },
+        ],
+      },
+    });
+    region = regionResult[0];
+  }
+
+  requireEntity(region, "Region is missing after seeding.");
+
   logger.info("Finished seeding regions.");
 
   logger.info("Seeding tax regions...");
-  await createTaxRegionsWorkflow(container).run({
-    input: countries.map((country_code) => ({
-      country_code,
-      provider_id: "tp_system",
-    })),
+  // A country can only belong to one tax region, so only create the ones that
+  // are missing. This keeps the seed re-runnable.
+  const { data: existingTaxRegions } = await query.graph({
+    entity: "tax_region",
+    fields: ["id", "country_code"],
   });
+  const existingTaxCountries = new Set(
+    existingTaxRegions.map((taxRegion) => taxRegion.country_code)
+  );
+  const missingTaxCountries = countries.filter(
+    (country_code) => !existingTaxCountries.has(country_code)
+  );
+
+  if (missingTaxCountries.length) {
+    await createTaxRegionsWorkflow(container).run({
+      input: missingTaxCountries.map((country_code) => ({
+        country_code,
+        provider_id: "tp_system",
+      })),
+    });
+  } else {
+    logger.info("Tax regions already exist, skipping creation.");
+  }
+
   logger.info("Finished seeding tax regions.");
 
   logger.info("Seeding stock location data...");
-  const { result: stockLocationResult } = await createStockLocationsWorkflow(
-    container
-  ).run({
-    input: {
-      locations: [
-        {
-          name: "European Warehouse",
-          address: {
-            city: "Copenhagen",
-            country_code: "DK",
-            address_1: "",
-          },
-        },
-      ],
-    },
+  // Stock locations, fulfillment sets and shipping options are unique by name,
+  // so re-creating them throws. Reuse whatever already exists.
+  const { data: existingStockLocations } = await query.graph({
+    entity: "stock_location",
+    fields: ["id", "name"],
   });
-  const stockLocation = stockLocationResult[0];
+
+  let stockLocation: StockLocationRef | undefined =
+    existingStockLocations.find(
+      (location) => location.name === "European Warehouse"
+    );
+
+  if (!stockLocation) {
+    const { result: stockLocationResult } = await createStockLocationsWorkflow(
+      container
+    ).run({
+      input: {
+        locations: [
+          {
+            name: "European Warehouse",
+            address: {
+              city: "Copenhagen",
+              country_code: "DK",
+              address_1: "",
+            },
+          },
+        ],
+      },
+    });
+    stockLocation = stockLocationResult[0];
+  } else {
+    logger.info('Stock location "European Warehouse" already exists.');
+  }
+
+  requireEntity(stockLocation, "Stock location is missing after seeding.");
 
   await link.create({
     [Modules.STOCK_LOCATION]: {
@@ -156,10 +301,23 @@ export default async function initial_data_seed({
   });
   const shippingProfile = shippingProfileResult[0];
 
-  const fulfillmentSet = await fulfillmentModuleService.createFulfillmentSets({
-    name: "European Warehouse delivery",
-    type: "shipping",
-    service_zones: [
+  const { data: existingFulfillmentSets } = await query.graph({
+    entity: "fulfillment_set",
+    fields: ["id", "name", "service_zones.id"],
+  });
+
+  let fulfillmentSet: FulfillmentSetRef | undefined =
+    existingFulfillmentSets.find(
+      (set) => set.name === "European Warehouse delivery"
+    );
+
+  if (fulfillmentSet) {
+    logger.info('Fulfillment set "European Warehouse delivery" already exists.');
+  } else {
+    fulfillmentSet = await fulfillmentModuleService.createFulfillmentSets({
+      name: "European Warehouse delivery",
+      type: "shipping",
+      service_zones: [
       {
         name: "Europe",
         geo_zones: [
@@ -194,7 +352,10 @@ export default async function initial_data_seed({
         ],
       },
     ],
-  });
+    });
+  }
+
+  requireEntity(fulfillmentSet, "Fulfillment set is missing after seeding.");
 
   await link.create({
     [Modules.STOCK_LOCATION]: {
@@ -205,86 +366,101 @@ export default async function initial_data_seed({
     },
   });
 
-  await createShippingOptionsWorkflow(container).run({
-    input: [
-      {
-        name: "Standard Shipping",
-        price_type: "flat",
-        provider_id: "manual_manual",
-        service_zone_id: fulfillmentSet.service_zones[0].id,
-        shipping_profile_id: shippingProfile.id,
-        type: {
-          label: "Standard",
-          description: "Ship in 2-3 days.",
-          code: "standard",
-        },
-        prices: [
-          {
-            currency_code: "usd",
-            amount: 10,
-          },
-          {
-            currency_code: "eur",
-            amount: 10,
-          },
-          {
-            region_id: region.id,
-            amount: 10,
-          },
-        ],
-        rules: [
-          {
-            attribute: "enabled_in_store",
-            value: "true",
-            operator: "eq",
-          },
-          {
-            attribute: "is_return",
-            value: "false",
-            operator: "eq",
-          },
-        ],
-      },
-      {
-        name: "Express Shipping",
-        price_type: "flat",
-        provider_id: "manual_manual",
-        service_zone_id: fulfillmentSet.service_zones[0].id,
-        shipping_profile_id: shippingProfile.id,
-        type: {
-          label: "Express",
-          description: "Ship in 24 hours.",
-          code: "express",
-        },
-        prices: [
-          {
-            currency_code: "usd",
-            amount: 10,
-          },
-          {
-            currency_code: "eur",
-            amount: 10,
-          },
-          {
-            region_id: region.id,
-            amount: 10,
-          },
-        ],
-        rules: [
-          {
-            attribute: "enabled_in_store",
-            value: "true",
-            operator: "eq",
-          },
-          {
-            attribute: "is_return",
-            value: "false",
-            operator: "eq",
-          },
-        ],
-      },
-    ],
+  const { data: existingShippingOptions } = await query.graph({
+    entity: "shipping_option",
+    fields: ["id", "name"],
   });
+  const existingShippingNames = new Set(
+    existingShippingOptions.map((option) => option.name)
+  );
+
+  const shippingOptions: FulfillmentWorkflow.CreateShippingOptionsWorkflowInput[] = [
+    {
+      name: "Standard Shipping",
+      price_type: "flat" as const,
+      provider_id: "manual_manual",
+      service_zone_id: fulfillmentSet.service_zones[0].id,
+      shipping_profile_id: shippingProfile.id,
+      type: {
+        label: "Standard",
+        description: "Ship in 2-3 days.",
+        code: "standard",
+      },
+      prices: [
+        {
+          currency_code: "usd",
+          amount: 10,
+        },
+        {
+          currency_code: "eur",
+          amount: 10,
+        },
+        {
+          region_id: region.id,
+          amount: 10,
+        },
+      ],
+      rules: [
+        {
+          attribute: "enabled_in_store",
+          value: "true",
+          operator: "eq" as const,
+        },
+        {
+          attribute: "is_return",
+          value: "false",
+          operator: "eq" as const,
+        },
+      ],
+    },
+    {
+      name: "Express Shipping",
+      price_type: "flat" as const,
+      provider_id: "manual_manual",
+      service_zone_id: fulfillmentSet.service_zones[0].id,
+      shipping_profile_id: shippingProfile.id,
+      type: {
+        label: "Express",
+        description: "Ship in 24 hours.",
+        code: "express",
+      },
+      prices: [
+        {
+          currency_code: "usd",
+          amount: 10,
+        },
+        {
+          currency_code: "eur",
+          amount: 10,
+        },
+        {
+          region_id: region.id,
+          amount: 10,
+        },
+      ],
+      rules: [
+        {
+          attribute: "enabled_in_store",
+          value: "true",
+          operator: "eq" as const,
+        },
+        {
+          attribute: "is_return",
+          value: "false",
+          operator: "eq" as const,
+        },
+      ],
+    },
+  ].filter((option) => !existingShippingNames.has(option.name));
+
+  if (shippingOptions.length) {
+    await createShippingOptionsWorkflow(container).run({
+      input: shippingOptions,
+    });
+  } else {
+    logger.info("Shipping options already exist, skipping creation.");
+  }
+
   logger.info("Finished seeding fulfillment data.");
 
   await linkSalesChannelsToStockLocationWorkflow(container).run({
@@ -297,57 +473,101 @@ export default async function initial_data_seed({
 
   logger.info("Seeding product data...");
 
-  const { result: categoryResult } = await createProductCategoriesWorkflow(
-    container
-  ).run({
-    input: {
-      product_categories: [
-        {
-          name: "Shirts",
-          is_active: true,
-        },
-        {
-          name: "Sweatshirts",
-          is_active: true,
-        },
-        {
-          name: "Pants",
-          is_active: true,
-        },
-        {
-          name: "Merch",
-          is_active: true,
-        },
-      ],
-    },
+  // Categories, options and products are unique by handle/title, so reuse
+  // whatever already exists.
+  const { data: existingCategories } = await query.graph({
+    entity: "product_category",
+    fields: ["id", "name", "handle"],
   });
 
-  const { result: productOptionsResult } = await createProductOptionsWorkflow(
-    container
-  ).run({
-    input: {
-      product_options: [
-        {
-          title: "Size",
-          values: ["S", "M", "L", "XL"],
-        },
-        {
-          title: "Color",
-          values: ["Black", "White"],
-        },
-      ],
-    },
-  });
-  const sizeOption = productOptionsResult.find((o) => o.title === "Size")!;
-  const colorOption = productOptionsResult.find((o) => o.title === "Color")!;
+  const categoryNames = ["Shirts", "Sweatshirts", "Pants", "Merch"];
+  const categories = existingCategories.filter((category) =>
+    categoryNames.includes(category.name)
+  );
 
-  await createProductsWorkflow(container).run({
-    input: {
-      products: [
+  const missingCategories = categoryNames.filter(
+    (name) => !categories.some((category) => category.name === name)
+  );
+
+  if (missingCategories.length) {
+    const { result: categoryResult } = await createProductCategoriesWorkflow(
+      container
+    ).run({
+      input: {
+        product_categories: missingCategories.map((name) => ({
+          name,
+          is_active: true,
+        })),
+      },
+    });
+    categories.push(...(categoryResult as unknown as typeof categories));
+  } else {
+    logger.info("Product categories already exist, skipping creation.");
+  }
+
+  const { data: existingOptions } = await query.graph({
+    entity: "product_option",
+    fields: ["id", "title"],
+  });
+
+  const optionDefinitions = [
+    {
+      title: "Size",
+      values: ["S", "M", "L", "XL"],
+    },
+    {
+      title: "Color",
+      values: ["Black", "White"],
+    },
+  ];
+
+  const productOptions = existingOptions.filter((option) =>
+    optionDefinitions.some((definition) => definition.title === option.title)
+  );
+
+  const missingOptions = optionDefinitions.filter(
+    (definition) =>
+      !productOptions.some((option) => option.title === definition.title)
+  );
+
+  if (missingOptions.length) {
+    const { result: productOptionsResult } = await createProductOptionsWorkflow(
+      container
+    ).run({
+      input: {
+        product_options: missingOptions,
+      },
+    });
+    productOptions.push(...(productOptionsResult as typeof productOptions));
+  } else {
+    logger.info("Product options already exist, skipping creation.");
+  }
+
+  const sizeOption = productOptions.find((o) => o.title === "Size")!;
+  const colorOption = productOptions.find((o) => o.title === "Color")!;
+
+  // Products are unique by handle, so skip the whole block when they exist.
+  const seedProductHandles = ["t-shirt", "sweatshirt", "pants", "merch"];
+  const { data: existingProducts } = await query.graph({
+    entity: "product",
+    fields: ["id", "handle"],
+  });
+  const existingHandles = new Set(existingProducts.map((p) => p.handle));
+
+  const productsToCreate = seedProductHandles.filter(
+    (handle) => !existingHandles.has(handle)
+  );
+
+  if (!productsToCreate.length) {
+    logger.info("Products already exist, skipping creation.");
+  } else {
+    await createProductsWorkflow(container).run({
+      input: {
+        products: [
         {
           title: "Medusa T-Shirt",
           category_ids: [
-            categoryResult.find((cat) => cat.name === "Shirts")!.id,
+            categories.find((cat) => cat.name === "Shirts")!.id,
           ],
           description:
             "Reimagine the feeling of a classic T-shirt. With our cotton T-shirts, everyday essentials no longer have to be ordinary.",
@@ -528,7 +748,7 @@ export default async function initial_data_seed({
         {
           title: "Medusa Sweatshirt",
           category_ids: [
-            categoryResult.find((cat) => cat.name === "Sweatshirts")!.id,
+            categories.find((cat) => cat.name === "Sweatshirts")!.id,
           ],
           description:
             "Reimagine the feeling of a classic sweatshirt. With our cotton sweatshirt, everyday essentials no longer have to be ordinary.",
@@ -624,7 +844,7 @@ export default async function initial_data_seed({
         {
           title: "Medusa Sweatpants",
           category_ids: [
-            categoryResult.find((cat) => cat.name === "Pants")!.id,
+            categories.find((cat) => cat.name === "Pants")!.id,
           ],
           description:
             "Reimagine the feeling of classic sweatpants. With our cotton sweatpants, everyday essentials no longer have to be ordinary.",
@@ -720,7 +940,7 @@ export default async function initial_data_seed({
         {
           title: "Medusa Shorts",
           category_ids: [
-            categoryResult.find((cat) => cat.name === "Merch")!.id,
+            categories.find((cat) => cat.name === "Merch")!.id,
           ],
           description:
             "Reimagine the feeling of classic shorts. With our cotton shorts, everyday essentials no longer have to be ordinary.",
@@ -813,9 +1033,11 @@ export default async function initial_data_seed({
             },
           ],
         },
-      ],
-    },
-  });
+        ].filter((product) => productsToCreate.includes(product.handle)),
+      },
+    });
+  }
+
   logger.info("Finished seeding product data.");
 
   logger.info("Seeding inventory levels.");
@@ -825,15 +1047,33 @@ export default async function initial_data_seed({
     fields: ["id"],
   });
 
-  await createInventoryLevelsWorkflow(container).run({
-    input: {
-      inventory_levels: inventoryItems.map((item) => ({
-        location_id: stockLocation.id,
-        stocked_quantity: 1000000,
-        inventory_item_id: item.id,
-      })),
-    },
+  // Only give stock to items that do not have a level at this location yet.
+  const { data: existingLevels } = await query.graph({
+    entity: "inventory_level",
+    fields: ["id", "inventory_item_id", "location_id"],
   });
+  const stockedItemIds = new Set(
+    existingLevels
+      .filter((level) => level.location_id === stockLocation.id)
+      .map((level) => level.inventory_item_id)
+  );
+  const itemsToStock = inventoryItems.filter(
+    (item) => !stockedItemIds.has(item.id)
+  );
+
+  if (itemsToStock.length) {
+    await createInventoryLevelsWorkflow(container).run({
+      input: {
+        inventory_levels: itemsToStock.map((item) => ({
+          location_id: stockLocation.id,
+          stocked_quantity: 1000000,
+          inventory_item_id: item.id,
+        })),
+      },
+    });
+  } else {
+    logger.info("Inventory levels already exist, skipping creation.");
+  }
 
   logger.info("Finished seeding inventory levels data.");
 }

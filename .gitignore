@@ -55,3 +55,16 @@ yarn-error.log*
 ehthumbs.db
 Thumbs.db
 **/.DS_Store
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Local agent/editor logs
+.cursor/

@@ -1,0 +1,26 @@
+{
+  "id": "medusa-local-env",
+  "name": "Medusa Local",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:9000",
+      "enabled": true,
+      "type": "default"
+    },
+    {
+      "key": "publishableKey",
+      "value": "pk_750f454742d6c02d050aa67fd2b607a40da558cac02ee40da898779dc81a968c",
+      "enabled": true,
+      "type": "secret"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "enabled": true,
+      "type": "secret"
+    }
+  ],
+  "_postman_variable_scope": "environment",
+  "_postman_exported_using": "medusa-openapi-generator"
+}
